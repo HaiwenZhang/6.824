@@ -30,42 +30,45 @@ func schedule(jobName string, mapFiles []string, nReduce int, phase jobPhase, re
 
 	// All ntasks tasks have to be scheduled on workers. Once all tasks
 	// have completed successfully, schedule() should return.
-	//
-	// Your code here (Part III, Part IV).
-	//
 
 	var wg sync.WaitGroup
 
-	for i := 0; i < ntasks; i++ {
-		taskArgs := DoTaskArgs{
-			JobName:       jobName,
-			File:          mapFiles[i],
-			Phase:         phase,
-			TaskNumber:    i,
-			NumOtherPhase: n_other,
+	var taskChain = make(chan int)
+
+	var taskArgs DoTaskArgs
+	taskArgs.JobName = jobName
+	taskArgs.NumOtherPhase = n_other
+	taskArgs.Phase = phase
+
+	go func() {
+		for i := 0; i < ntasks; i++ {
+			wg.Add(1)
+			taskChain <- i
+		}
+		wg.Wait()
+		close(taskChain)
+	}()
+
+	for i := range taskChain {
+		worker := <-registerChan
+
+		taskArgs.TaskNumber = i
+
+		if phase == mapPhase {
+			taskArgs.File = mapFiles[i]
 		}
 
-		wg.Add(1)
+		go func(worker string, taskArgs DoTaskArgs) {
+			if call(worker, "Worker.DoTask", &taskArgs, nil) {
+				wg.Done()
 
-		go func() {
-			defer wg.Done()
-
-			success := false
-
-			for !success {
-				worker := <-registerChan
-				success = call(worker, "Worker.DoTask", taskArgs, nil)
-
-				if success {
-					go func() {
-						registerChan <- worker
-					}()
-				}
+				registerChan <- worker
+			} else {
+				fmt.Printf("Shedule: assign %s task %v to %s failed", phase, taskArgs.TaskNumber, worker)
+				taskChain <- taskArgs.TaskNumber
 			}
-		}()
+		}(worker, taskArgs)
 	}
-
-	wg.Wait()
 
 	fmt.Printf("Schedule: %v done\n", phase)
 }
