@@ -1,4 +1,4 @@
-package raftkv
+package kvraft
 
 import "linearizability"
 
@@ -271,8 +271,9 @@ func GenericTest(t *testing.T, part string, nclients int, unreliable bool, crash
 		if maxraftstate > 0 {
 			// Check maximum after the servers have processed all client
 			// requests and had time to checkpoint.
-			if cfg.LogSize() > 2*maxraftstate {
-				t.Fatalf("logs were not trimmed (%v > 2*%v)", cfg.LogSize(), maxraftstate)
+			sz := cfg.LogSize()
+			if sz > 2*maxraftstate {
+				t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
 			}
 		}
 	}
@@ -405,8 +406,9 @@ func GenericTestLinearizability(t *testing.T, part string, nclients int, nserver
 		if maxraftstate > 0 {
 			// Check maximum after the servers have processed all client
 			// requests and had time to checkpoint.
-			if cfg.LogSize() > 2*maxraftstate {
-				t.Fatalf("logs were not trimmed (%v > 2*%v)", cfg.LogSize(), maxraftstate)
+			sz := cfg.LogSize()
+			if sz > 2*maxraftstate {
+				t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
 			}
 		}
 	}
@@ -620,8 +622,9 @@ func TestSnapshotRPC3B(t *testing.T) {
 
 	// check that the majority partition has thrown away
 	// most of its log entries.
-	if cfg.LogSize() > 2*maxraftstate {
-		t.Fatalf("logs were not trimmed (%v > 2*%v)", cfg.LogSize(), maxraftstate)
+	sz := cfg.LogSize()
+	if sz > 2*maxraftstate {
+		t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
 	}
 
 	// now make group that requires participation of
@@ -669,13 +672,15 @@ func TestSnapshotSize3B(t *testing.T) {
 	}
 
 	// check that servers have thrown away most of their log entries
-	if cfg.LogSize() > 2*maxraftstate {
-		t.Fatalf("logs were not trimmed (%v > 2*%v)", cfg.LogSize(), maxraftstate)
+	sz := cfg.LogSize()
+	if sz > 2*maxraftstate {
+		t.Fatalf("logs were not trimmed (%v > 2*%v)", sz, maxraftstate)
 	}
 
 	// check that the snapshots are not unreasonably large
-	if cfg.SnapshotSize() > maxsnapshotstate {
-		t.Fatalf("snapshot too large (%v > %v)", cfg.SnapshotSize(), maxsnapshotstate)
+	ssz := cfg.SnapshotSize()
+	if ssz > maxsnapshotstate {
+		t.Fatalf("snapshot too large (%v > %v)", ssz, maxsnapshotstate)
 	}
 
 	cfg.end()

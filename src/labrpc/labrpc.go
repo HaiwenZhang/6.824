@@ -143,7 +143,7 @@ func MakeNetwork() *Network {
 			select {
 			case xreq := <-rn.endCh:
 				atomic.AddInt32(&rn.count, 1)
-				go rn.ProcessReq(xreq)
+				go rn.processReq(xreq)
 			case <-rn.done:
 				return
 			}
@@ -178,7 +178,7 @@ func (rn *Network) LongDelays(yes bool) {
 	rn.longDelays = yes
 }
 
-func (rn *Network) ReadEndnameInfo(endname interface{}) (enabled bool,
+func (rn *Network) readEndnameInfo(endname interface{}) (enabled bool,
 	servername interface{}, server *Server, reliable bool, longreordering bool,
 ) {
 	rn.mu.Lock()
@@ -194,7 +194,7 @@ func (rn *Network) ReadEndnameInfo(endname interface{}) (enabled bool,
 	return
 }
 
-func (rn *Network) IsServerDead(endname interface{}, servername interface{}, server *Server) bool {
+func (rn *Network) isServerDead(endname interface{}, servername interface{}, server *Server) bool {
 	rn.mu.Lock()
 	defer rn.mu.Unlock()
 
@@ -204,8 +204,8 @@ func (rn *Network) IsServerDead(endname interface{}, servername interface{}, ser
 	return false
 }
 
-func (rn *Network) ProcessReq(req reqMsg) {
-	enabled, servername, server, reliable, longreordering := rn.ReadEndnameInfo(req.endname)
+func (rn *Network) processReq(req reqMsg) {
+	enabled, servername, server, reliable, longreordering := rn.readEndnameInfo(req.endname)
 
 	if enabled && servername != nil && server != nil {
 		if reliable == false {
@@ -241,7 +241,7 @@ func (rn *Network) ProcessReq(req reqMsg) {
 			case reply = <-ech:
 				replyOK = true
 			case <-time.After(100 * time.Millisecond):
-				serverDead = rn.IsServerDead(req.endname, servername, server)
+				serverDead = rn.isServerDead(req.endname, servername, server)
 				if serverDead {
 					go func() {
 						<-ech // drain channel to let the goroutine created earlier terminate
@@ -256,7 +256,7 @@ func (rn *Network) ProcessReq(req reqMsg) {
 		// to an Append, but the server persisted the update
 		// into the old Persister. config.go is careful to call
 		// DeleteServer() before superseding the Persister.
-		serverDead = rn.IsServerDead(req.endname, servername, server)
+		serverDead = rn.isServerDead(req.endname, servername, server)
 
 		if replyOK == false || serverDead == true {
 			// server was killed while we were waiting; return error.

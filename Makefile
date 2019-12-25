@@ -8,11 +8,11 @@ LABS=" lab1 lab2a lab2b lab2c lab3a lab3b lab4a lab4b "
 %:
 	@echo "Preparing $@-handin.tar.gz"
 	@echo "Checking for committed temporary files..."
-	@if git ls-files | grep -E 'mrtmp|mrinput' > /dev/null; then \
+	@if git ls-files | grep -E 'mr-tmp|mrinput' > /dev/null; then \
 		echo "" ; \
 		echo "OBS! You have committed some large temporary files:" ; \
 		echo "" ; \
-		git ls-files | grep -E 'mrtmp|mrinput' | sed 's/^/\t/' ; \
+		git ls-files | grep -E 'mr-tmp|mrinput' | sed 's/^/\t/' ; \
 		echo "" ; \
 		echo "Follow the instructions at http://stackoverflow.com/a/308684/472927" ; \
 		echo "to remove them, and then run make again." ; \
@@ -25,6 +25,7 @@ LABS=" lab1 lab2a lab2b lab2c lab3a lab3b lab4a lab4b "
 			"--exclude=src/main/pg-*.txt" \
 			"--exclude=src/main/diskvd" \
 			"--exclude=src/mapreduce/824-mrinput-*.txt" \
+			"--exclude=src/main/mr-*" \
 			"--exclude=mrtmp.*" \
 			"--exclude=src/main/diff.out" \
 			Makefile src; \

@@ -18,6 +18,7 @@ package raft
 //
 
 import "sync"
+import "sync/atomic"
 import "labrpc"
 
 // import "bytes"
@@ -50,6 +51,7 @@ type Raft struct {
 	peers     []*labrpc.ClientEnd // RPC end points of all peers
 	persister *Persister          // Object to hold this peer's persisted state
 	me        int                 // this peer's index into peers[]
+	dead      int32               // set by Kill()
 
 	// Your data here (2A, 2B, 2C).
 	// Look at the paper's Figure 2 for a description of what
@@ -66,7 +68,6 @@ func (rf *Raft) GetState() (int, bool) {
 	// Your code here (2A).
 	return term, isleader
 }
-
 
 //
 // save Raft's persistent state to stable storage,
@@ -195,12 +196,22 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 
 //
 // the tester calls Kill() when a Raft instance won't
-// be needed again. you are not required to do anything
-// in Kill(), but it might be convenient to (for example)
-// turn off debug output from this instance.
+// be needed again. for your convenience, we supply
+// code to set rf.dead (without needing a lock),
+// and a killed() method to test rf.dead in
+// long-running loops. you can also add your own
+// code to Kill(). you're not required to do anything
+// about this, but it may be convenient (for example)
+// to suppress debug output from a Kill()ed instance.
 //
 func (rf *Raft) Kill() {
+	atomic.StoreInt32(&rf.dead, 1)
 	// Your code here, if desired.
+}
+
+func (rf *Raft) killed() bool {
+	z := atomic.LoadInt32(&rf.dead)
+	return z == 1
 }
 
 //
