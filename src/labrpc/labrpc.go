@@ -49,7 +49,7 @@ package labrpc
 //   pass svc to srv.AddService()
 //
 
-import "labgob"
+import "6.824/labgob"
 import "bytes"
 import "reflect"
 import "sync"
@@ -90,16 +90,25 @@ func (e *ClientEnd) Call(svcMeth string, args interface{}, reply interface{}) bo
 
 	qb := new(bytes.Buffer)
 	qe := labgob.NewEncoder(qb)
-	qe.Encode(args)
+	if err := qe.Encode(args); err != nil {
+		panic(err)
+	}
 	req.args = qb.Bytes()
 
+	//
+	// send the request.
+	//
 	select {
 	case e.ch <- req:
-		// ok
+		// the request has been sent.
 	case <-e.done:
+		// entire Network has been destroyed.
 		return false
 	}
 
+	//
+	// wait for the reply.
+	//
 	rep := <-req.replyCh
 	if rep.ok {
 		rb := bytes.NewBuffer(rep.reply)
@@ -125,6 +134,7 @@ type Network struct {
 	endCh          chan reqMsg
 	done           chan struct{} // closed when Network is cleaned up
 	count          int32         // total RPC count, for statistics
+	bytes          int64         // total bytes send, for statistics
 }
 
 func MakeNetwork() *Network {
@@ -143,6 +153,7 @@ func MakeNetwork() *Network {
 			select {
 			case xreq := <-rn.endCh:
 				atomic.AddInt32(&rn.count, 1)
+				atomic.AddInt64(&rn.bytes, int64(len(xreq.args)))
 				go rn.processReq(xreq)
 			case <-rn.done:
 				return
@@ -271,9 +282,11 @@ func (rn *Network) processReq(req reqMsg) {
 			// the number of goroutines, so that the race
 			// detector is less likely to get upset.
 			time.AfterFunc(time.Duration(ms)*time.Millisecond, func() {
+				atomic.AddInt64(&rn.bytes, int64(len(reply.reply)))
 				req.replyCh <- reply
 			})
 		} else {
+			atomic.AddInt64(&rn.bytes, int64(len(reply.reply)))
 			req.replyCh <- reply
 		}
 	} else {
@@ -359,6 +372,11 @@ func (rn *Network) GetCount(servername interface{}) int {
 func (rn *Network) GetTotalCount() int {
 	x := atomic.LoadInt32(&rn.count)
 	return int(x)
+}
+
+func (rn *Network) GetTotalBytes() int64 {
+	x := atomic.LoadInt64(&rn.bytes)
+	return x
 }
 
 //
