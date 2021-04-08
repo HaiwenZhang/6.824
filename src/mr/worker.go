@@ -1,10 +1,15 @@
 package mr
 
-import "fmt"
-import "log"
-import "net/rpc"
-import "hash/fnv"
-
+import (
+	"encoding/json"
+	"fmt"
+	"hash/fnv"
+	"io/ioutil"
+	"log"
+	"net/rpc"
+	"os"
+	"sort"
+)
 
 //
 // Map functions return a slice of KeyValue.
@@ -24,6 +29,25 @@ func ihash(key string) int {
 	return int(h.Sum32() & 0x7fffffff)
 }
 
+type ByKey []KeyValue
+
+func (a ByKey) Len() int           { return len(a) }
+func (a ByKey) Swap(i, j int)      { a[i], a[j] = a[i], a[i] }
+func (a ByKey) Less(i, j int) bool { return a[i].Key < a[j].Key }
+
+func finalizeReduceFile(tmpFile string, taskN int) {
+	finalFile := fmt.Sprintf("mr-out-%d", taskN)
+	os.Rename(tmpFile, finalFile)
+}
+
+func getIntermediateFile(mapTaskN int, reduceTaskN int) string {
+	return fmt.Sprintf("mr-%d-%d", mapTaskN, reduceTaskN)
+}
+
+func finalizeIntermediateFile(tmpFile string, mapTaskN int, reduceTaskN int) {
+	finalFile := getIntermediateFile(mapTaskN, reduceTaskN)
+	os.Rename(tmpFile, finalFile)
+}
 
 //
 // main/mrworker.go calls this function.
@@ -31,11 +55,128 @@ func ihash(key string) int {
 func Worker(mapf func(string, string) []KeyValue,
 	reducef func(string, []string) string) {
 
-	// Your worker implementation here.
+	for {
 
-	// uncomment to send the Example RPC to the coordinator.
-	// CallExample()
+		replyArgs := CallAskTask()
 
+		switch replyArgs.TaskType {
+		case Map:
+			doMapTask(mapf, replyArgs)
+		case Reduce:
+			doReduceTask(reducef, replyArgs)
+		case Done:
+			os.Exit(0)
+		default:
+			fmt.Errorf("Bad task type? %d", replyArgs.TaskType)
+		}
+
+		finishedTaskArgs := FinishedTaskArgs{
+			TaskType: replyArgs.TaskType,
+			TaskNum:  replyArgs.TaskNum,
+		}
+
+		CallTaskDone(&finishedTaskArgs)
+	}
+}
+
+func doMapTask(mapf func(string, string) []KeyValue, reply *GetTaskReply) {
+	file, err := os.Open(reply.MapFile)
+
+	if err != nil {
+		log.Fatalf("Cannot open %v", reply.MapFile)
+	}
+
+	content, err := ioutil.ReadAll(file)
+
+	if err != nil {
+		log.Fatalf("Cannot read %v", reply.MapFile)
+	}
+	file.Close()
+
+	kva := mapf(reply.MapFile, string(content))
+
+	tmpFiles := []*os.File{}
+	tmpFilenames := []string{}
+	encoders := []*json.Encoder{}
+
+	for r := 0; r < reply.NReduceTasks; r++ {
+		tmpFile, err := ioutil.TempFile("", "")
+		if err != nil {
+			log.Fatalf("Cannot open tempfile")
+		}
+		tmpFiles = append(tmpFiles, tmpFile)
+		tmpFilename := tmpFile.Name()
+		tmpFilenames = append(tmpFilenames, tmpFilename)
+
+		enc := json.NewEncoder(tmpFile)
+		encoders = append(encoders, enc)
+	}
+
+	for _, kv := range kva {
+		r := ihash(kv.Key) % reply.NReduceTasks
+		encoders[r].Encode(&kv)
+	}
+
+	for _, f := range tmpFiles {
+		f.Close()
+	}
+
+	for r := 0; r < reply.NReduceTasks; r++ {
+		finalizeIntermediateFile(tmpFilenames[r], reply.TaskNum, r)
+	}
+}
+
+func doReduceTask(reducef func(string, []string) string, reply *GetTaskReply) {
+	kva := []KeyValue{}
+
+	for m := 0; m < reply.NMapTasks; m++ {
+		iFileName := getIntermediateFile(m, reply.TaskNum)
+		file, err := os.Open(iFileName)
+		if err != nil {
+			log.Fatalf("Cannot open %v", iFileName)
+		}
+		dec := json.NewDecoder(file)
+
+		for {
+			var kv KeyValue
+			if err := dec.Decode(&kv); err != nil {
+				break
+			}
+			kva = append(kva, kv)
+		}
+
+		file.Close()
+	}
+
+	sort.Sort(ByKey(kva))
+	tmpFile, err := ioutil.TempFile("", "")
+	if err != nil {
+		log.Fatalf("Cannot open tmpfile")
+	}
+
+	tmpFilename := tmpFile.Name()
+
+	key_begin := 0
+
+	for key_begin < len(kva) {
+		key_end := key_begin + 1
+
+		for key_end < len(kva) && kva[key_end].Key == kva[key_begin].Key {
+			key_end++
+		}
+		values := []string{}
+		for k := key_begin; k < key_end; k++ {
+			values = append(values, kva[k].Value)
+		}
+
+		output := reducef(kva[key_begin].Key, values)
+
+		fmt.Fprintf(tmpFile, "%v %v\n", kva[key_begin].Key, output)
+
+		key_begin = key_end
+	}
+
+	finalizeReduceFile(tmpFilename, reply.TaskNum)
 }
 
 //
@@ -59,6 +200,23 @@ func CallExample() {
 
 	// reply.Y should be 100.
 	fmt.Printf("reply.Y %v\n", reply.Y)
+}
+
+func CallAskTask() *GetTaskReply {
+
+	args := GetTaskArgs{}
+
+	reply := GetTaskReply{}
+
+	call("Coordinator.HandleGetTask", &args, &reply)
+
+	return &reply
+}
+
+func CallTaskDone(args *FinishedTaskArgs) {
+	reply := FinshedTaskReply{}
+	call("Coordinator.HandleFinishedTask", args, &reply)
+	fmt.Printf("Task Done status %v\n", args.TaskNum)
 }
 
 //

@@ -18,14 +18,14 @@ package raft
 //
 
 import (
-//	"bytes"
+	//	"bytes"
 	"sync"
 	"sync/atomic"
+	"time"
 
-//	"6.824/labgob"
+	//	"6.824/labgob"
 	"6.824/labrpc"
 )
-
 
 //
 // as each Raft peer becomes aware that successive log entries are
@@ -50,6 +50,12 @@ type ApplyMsg struct {
 	SnapshotIndex int
 }
 
+type LogEntry struct {
+	Term    int
+	Index   int
+	Command interface{}
+}
+
 //
 // A Go object implementing a single Raft peer.
 //
@@ -64,6 +70,33 @@ type Raft struct {
 	// Look at the paper's Figure 2 for a description of what
 	// state a Raft server must maintain.
 
+	applyChan chan ApplyMsg
+	applyCond *sync.Cond
+
+	electionTime time.Time
+
+	// Persistent state
+	currentTerm int
+	votedFor    int
+
+	// Volatile state
+	commitIndex int
+	lastApplied int
+
+	// Leader state
+	nextIndex  []int
+	matchIndex []int
+
+	// Snapshot state
+	snapshot      []byte
+	snapshotIndex int
+	snapshotTerm  int
+
+	// Temporary location to give the service snapshot
+	// to the apply read
+	waittingSnapshot []byte
+	waittingIndex    int
+	waittingTerm     int
 }
 
 // return currentTerm and whether this server
@@ -92,7 +125,6 @@ func (rf *Raft) persist() {
 	// rf.persister.SaveRaftState(data)
 }
 
-
 //
 // restore previously persisted state.
 //
@@ -115,7 +147,6 @@ func (rf *Raft) readPersist(data []byte) {
 	// }
 }
 
-
 //
 // A service wants to switch to snapshot.  Only do so if Raft hasn't
 // have more recent info since it communicate the snapshot on applyCh.
@@ -135,7 +166,6 @@ func (rf *Raft) Snapshot(index int, snapshot []byte) {
 	// Your code here (2D).
 
 }
-
 
 //
 // example RequestVote RPC arguments structure.
@@ -194,7 +224,6 @@ func (rf *Raft) sendRequestVote(server int, args *RequestVoteArgs, reply *Reques
 	return ok
 }
 
-
 //
 // the service using Raft (e.g. a k/v server) wants to start
 // agreement on the next command to be appended to Raft's log. if this
@@ -215,7 +244,6 @@ func (rf *Raft) Start(command interface{}) (int, int, bool) {
 	isLeader := true
 
 	// Your code here (2B).
-
 
 	return index, term, isLeader
 }
@@ -278,7 +306,6 @@ func Make(peers []*labrpc.ClientEnd, me int,
 
 	// start ticker goroutine to start elections
 	go rf.ticker()
-
 
 	return rf
 }
